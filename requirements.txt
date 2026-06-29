@@ -37,5 +37,4 @@ toml
 
 transformers
 translation-engine
-ctranslate2
-
+ctranslate2==3.24.0
