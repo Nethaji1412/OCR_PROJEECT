@@ -1,42 +1,59 @@
-streamlit
-streamlit-option-menu
+# ============================================================
+# requirements.txt — Streamlit Cloud compatible
+# Python 3.10+
+# ============================================================
+#
+# REMOVED (broke on Streamlit Cloud):
+#   ctranslate2       — ImportError: cannot enable executable stack (seccomp)
+#   sentencepiece     — pulled in by ctranslate2, not needed now
+#   translation-engine — not a real PyPI package (was your local file name)
+#   fasttext          — native binary, fails on Cloud sandbox
+#   paddlepaddle-gpu  — no GPU on Streamlit Cloud, conflicts with CPU build
+#   spacy             — very heavy, not used in the app logic
+#   language-tool-python — requires Java runtime, not available on Cloud
+#   redis             — no Redis server on Cloud; overkill for this app
+#   aiohttp           — not used by the app
+#   scipy             — not used by the app
+#   textblob          — not used by the app
+#   PyPDF2            — replaced by PyMuPDF (fitz) which handles PDFs better
+#   streamlit-option-menu — pinned to old version, conflicts with streamlit 1.35+
+#
+# FIXED:
+#   streamlit         — unpinned so Cloud picks a compatible version
+#   paddlepaddle      — unpinned (Cloud installs 2.6.x automatically)
+#   paddleocr         — unpinned (stable latest)
+#   opencv            — changed to opencv-python-headless (no display needed on Cloud)
+#   PyMuPDF           — unpinned
+#
+# ============================================================
 
+# ── Web UI ────────────────────────────────────────────────
+streamlit
+
+# ── OCR (image-based, used only for image uploads) ────────
 paddleocr
 paddlepaddle
-
 opencv-python-headless
 Pillow
-pytesseract
 
-PyMuPDF
-python-docx
-PyPDF2
+# ── Document text extraction ──────────────────────────────
+PyMuPDF              # fitz — PDF, EPUB, XPS, SVG, TXT
+python-docx          # DOCX fallback when fitz returns no text layer
+python-pptx          # PPTX fallback
+openpyxl             # XLSX fallback
 
-spacy
-language-tool-python
-textblob
+# ── LLM correction ────────────────────────────────────────
+requests             # Fireworks AI REST calls
 
-requests
-aiohttp
-httpx
+# ── Offline translation (replaces ctranslate2) ────────────
+argostranslate       # Works on Streamlit Cloud; packs downloaded on demand
 
+# ── Utilities ─────────────────────────────────────────────
 numpy
 pandas
-scipy
-
-cachetools
-redis
-
 python-dotenv
 pydantic
 loguru
-
 pyyaml
-json5
-toml
-
-transformers
-translation-engine
-streamlit
-ctranslate2
-sentencepiece
+cachetools
+httpx
