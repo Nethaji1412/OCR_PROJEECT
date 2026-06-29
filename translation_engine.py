@@ -1,201 +1,220 @@
 """
-Simple Translation Engine - Streamlit Cloud Compatible
-Works without ctranslate2 or heavy ML models
-Uses dictionary-based and heuristic translation
+translation_engine.py
+──────────────────────
+Multilingual translation using argostranslate (offline, no ctranslate2).
+
+WHY THIS REPLACES ctranslate2:
+  ctranslate2 fails on Streamlit Cloud with:
+    ImportError: libctranslate2.so.X: cannot enable executable stack
+  This is a kernel-level seccomp restriction on Streamlit Cloud's sandbox —
+  ctranslate2's shared library requires executable stack memory, which the
+  cloud environment blocks. It cannot be fixed by reinstalling.
+
+  argostranslate is the correct alternative:
+    - Pure Python + PyTorch backend (no native .so with exec-stack)
+    - Works fine on Streamlit Cloud
+    - Downloads language packs on demand
+    - Covers the same language pairs
+
+SUPPORTED LANGUAGES (install packs from sidebar):
+  Arabic, Chinese, French, German, Hindi, Italian, Japanese,
+  Korean, Portuguese, Russian, Spanish, Tamil, Turkish, Urdu
 """
 
-from typing import List, Dict, Optional
-import re
+from __future__ import annotations
+from typing import Optional
 
 
-class SimpleTranslationEngine:
+# ── Language metadata ─────────────────────────────────────────────────────────
+
+LANGUAGE_MAP: dict[str, str] = {
+    "ar": "Arabic",
+    "zh": "Chinese",
+    "fr": "French",
+    "de": "German",
+    "hi": "Hindi",
+    "it": "Italian",
+    "ja": "Japanese",
+    "ko": "Korean",
+    "pt": "Portuguese",
+    "ru": "Russian",
+    "es": "Spanish",
+    "ta": "Tamil",
+    "tr": "Turkish",
+    "ur": "Urdu",
+    "en": "English",
+}
+
+# Codes used in the original app (PaddleOCR style → argos style)
+PADDLE_TO_ARGOS: dict[str, str] = {
+    "en": "en",
+    "hi": "hi",
+    "ta": "ta",
+    "te": "te",   # Telugu — may not have an argos pack; falls back gracefully
+    "ka": "ka",   # Kannada — same
+    "mr": "mr",   # Marathi — same
+}
+
+
+# ── Public API ────────────────────────────────────────────────────────────────
+
+class TranslationEngine:
     """
-    Simple translation engine using dictionary-based approach
-    Compatible with Streamlit Cloud (no heavy dependencies)
+    Drop-in replacement for the old ctranslate2-based TranslationEngine.
+    Uses argostranslate under the hood.
     """
-    
-    def __init__(self):
-        """Initialize translation engine"""
-        self.language_codes = {
-            'en': 'English',
-            'hi': 'Hindi (हिंदी)',
-            'ta': 'Tamil (தமிழ்)',
-            'te': 'Telugu (తెలుగు)',
-            'ka': 'Kannada (ಕನ್ನಡ)',
-            'mr': 'Marathi (मराठी)',
-        }
-        
-        # Comprehensive word dictionary for basic translation
-        self.translation_dict = {
-            'en': {
-                # Common words
-                'the': {'hi': 'यह', 'ta': 'அ', 'te': 'ఈ', 'ka': 'ಇದು', 'mr': 'हे'},
-                'a': {'hi': 'एक', 'ta': 'ஒரு', 'te': 'ఒక', 'ka': 'ಒಂದು', 'mr': 'एक'},
-                'is': {'hi': 'है', 'ta': 'உள்ளது', 'te': 'ఉంది', 'ka': 'ಆಗಿದೆ', 'mr': 'आहे'},
-                'and': {'hi': 'और', 'ta': 'மற்றும்', 'te': 'మరియు', 'ka': 'ಮತ್ತು', 'mr': 'आणि'},
-                'of': {'hi': 'का', 'ta': 'இன்', 'te': 'యొక్క', 'ka': 'ನ', 'mr': 'चा'},
-                'to': {'hi': 'को', 'ta': 'க்கு', 'te': 'కు', 'ka': 'ಗೆ', 'mr': 'ला'},
-                'in': {'hi': 'में', 'ta': 'இல்', 'te': 'లో', 'ka': 'ನಲ್ಲಿ', 'mr': 'मध्ये'},
-                'for': {'hi': 'के लिए', 'ta': 'க்கான', 'te': 'కోసం', 'ka': 'ಗಾಗಿ', 'mr': 'साठी'},
-                'that': {'hi': 'कि', 'ta': 'அது', 'te': 'అది', 'ka': 'ಅದು', 'mr': 'ते'},
-                'with': {'hi': 'के साथ', 'ta': 'உடன்', 'te': 'తో', 'ka': 'ಜೊತೆಗೆ', 'mr': 'सह'},
-                
-                # Tech/Business terms
-                'machine': {'hi': 'मशीन', 'ta': 'இயந்திரம்', 'te': 'యంత్రం', 'ka': 'ಯಂತ್ರ', 'mr': 'यंत्र'},
-                'learning': {'hi': 'सीखना', 'ta': 'கற்றல்', 'te': 'నేర్చుకోవడం', 'ka': 'ಕಲಿಕೆ', 'mr': 'शिक्षण'},
-                'data': {'hi': 'डेटा', 'ta': 'தரவு', 'te': 'డేటా', 'ka': 'ಡೇಟಾ', 'mr': 'डेटा'},
-                'system': {'hi': 'प्रणाली', 'ta': 'அமைப்பு', 'te': 'వ్యవస్థ', 'ka': 'ವ್ಯವಸ್ಥೆ', 'mr': 'प्रणाली'},
-                'computer': {'hi': 'कंप्यूटर', 'ta': 'கணினி', 'te': 'కంప్యూటర్', 'ka': 'ಕಂಪ್ಯೂಟರ್', 'mr': 'संगणक'},
-                'software': {'hi': 'सॉफ्टवेयर', 'ta': 'மென்பொருள்', 'te': 'సాఫ్ట్‌వేర్', 'ka': 'ಸಾಫ್ಟ್‌ವೇರ್', 'mr': 'सॉफ्टवेयर'},
-                'technology': {'hi': 'प्रौद्योगिकी', 'ta': 'தொழில்நுட்பம்', 'te': 'సాంకేతికత', 'ka': 'ತಂತ್ರಜ್ಞಾನ', 'mr': 'तंत्रज्ञान'},
-                'intelligence': {'hi': 'बुद्धिमत्ता', 'ta': 'அறிவுசாலி', 'te': 'గ్రహణశక్తి', 'ka': 'ಬುದ್ಧಿಮತ್ತೆ', 'mr': 'बुद्धिमत्ता'},
-                'artificial': {'hi': 'कृत्रिम', 'ta': 'செயற்கை', 'te': 'కృత్రిమ', 'ka': 'ಕೃತ್ರಿಮ', 'mr': 'कृत्रिम'},
-                'network': {'hi': 'नेटवर्क', 'ta': 'வலையமைப்பு', 'te': 'నెట్‌వర్క్', 'ka': 'ನೆಟ್‌ವರ್ಕ್', 'mr': 'नेटवर्क'},
-                'algorithm': {'hi': 'एल्गोरिदम', 'ta': 'வழிமுறை', 'te': 'అల్గారిథమ్', 'ka': 'ಅಲ್ಗಾರಿದಮ್', 'mr': 'अल्गोरिदम'},
-                
-                # Common adjectives
-                'good': {'hi': 'अच्छा', 'ta': 'நல்ல', 'te': 'మంచి', 'ka': 'ಒಳ್ಳೆಯ', 'mr': 'चांगला'},
-                'bad': {'hi': 'बुरा', 'ta': 'கெட்ட', 'te': 'చెడు', 'ka': 'ಕೆಟ್ಟ', 'mr': 'वाईट'},
-                'large': {'hi': 'बड़ा', 'ta': 'பெரிய', 'te': 'పెద్ద', 'ka': 'ದೊಡ್ಡ', 'mr': 'मोठा'},
-                'small': {'hi': 'छोटा', 'ta': 'சிறிய', 'te': 'చిన్న', 'ka': 'ಚಿಕ್ಕ', 'mr': 'लहान'},
-                'new': {'hi': 'नया', 'ta': 'புதிய', 'te': 'కొత్త', 'ka': 'ಹೊಸ', 'mr': 'नवीन'},
-                'old': {'hi': 'पुराना', 'ta': 'பழைய', 'te': 'పాతది', 'ka': 'ಹಳೆಯ', 'mr': 'जुना'},
-            }
-        }
-    
-    def translate(self, text: str, source_lang: str = 'en', target_lang: str = 'hi') -> str:
-        """
-        Translate text using dictionary-based approach
-        
-        Args:
-            text: Text to translate
-            source_lang: Source language code
-            target_lang: Target language code
-        
-        Returns:
-            Translated text or original if not possible
-        """
-        if source_lang == target_lang:
-            return text
-        
-        if source_lang not in self.translation_dict:
-            return text  # Can only translate from English
-        
-        # Split text into words
-        words = text.lower().split()
-        translated_words = []
-        untranslated_count = 0
-        
-        for word in words:
-            # Remove punctuation
-            clean_word = re.sub(r'[^\w\s]', '', word)
-            
-            # Try to translate
-            if clean_word in self.translation_dict[source_lang]:
-                translated = self.translation_dict[source_lang][clean_word].get(target_lang, word)
-                translated_words.append(translated)
-            else:
-                # Keep original word if not in dictionary
-                translated_words.append(word)
-                untranslated_count += 1
-        
-        result = ' '.join(translated_words)
-        
-        # If too many untranslated words, return original
-        if untranslated_count / len(words) > 0.7:
-            return text
-        
-        return result
-    
-    def translate_batch(self, texts: List[str], source_lang: str = 'en', 
-                       target_lang: str = 'hi') -> List[str]:
-        """Translate multiple texts"""
-        return [self.translate(text, source_lang, target_lang) for text in texts]
-    
+
+    def get_supported_languages(self) -> dict[str, str]:
+        return LANGUAGE_MAP
+
     def detect_language(self, text: str) -> str:
-        """
-        Detect language of text based on character patterns
-        
-        Returns:
-            Language code (en, hi, ta, te, ka, mr)
-        """
+        """Heuristic language detection by Unicode block."""
         if not text:
-            return 'en'
-        
-        # Count script-specific characters
-        hindi_chars = sum(1 for c in text if ord(c) >= 0x0900 and ord(c) <= 0x097F)
-        tamil_chars = sum(1 for c in text if ord(c) >= 0x0B80 and ord(c) <= 0x0BFF)
-        telugu_chars = sum(1 for c in text if ord(c) >= 0x0C00 and ord(c) <= 0x0C7F)
-        kannada_chars = sum(1 for c in text if ord(c) >= 0x0C80 and ord(c) <= 0x0CFF)
-        
-        total_chars = len(text)
-        
-        # Determine language based on character density
-        if hindi_chars > total_chars * 0.3:
-            return 'hi'
-        elif tamil_chars > total_chars * 0.3:
-            return 'ta'
-        elif telugu_chars > total_chars * 0.3:
-            return 'te'
-        elif kannada_chars > total_chars * 0.3:
-            return 'ka'
-        else:
-            return 'en'  # Default to English
-    
-    def get_supported_languages(self) -> Dict[str, str]:
-        """Get all supported languages"""
-        return self.language_codes
-    
-    def add_translations(self, source_lang: str, word: str, translations: Dict[str, str]) -> None:
-        """Add custom word translations"""
-        if source_lang not in self.translation_dict:
-            self.translation_dict[source_lang] = {}
-        
-        self.translation_dict[source_lang][word.lower()] = translations
-    
-    def get_dictionary_stats(self) -> Dict:
-        """Get statistics about the translation dictionary"""
-        stats = {}
-        for lang, words in self.translation_dict.items():
-            stats[lang] = len(words)
-        return stats
+            return "en"
+
+        counts: dict[str, int] = {
+            "hi": 0, "ta": 0, "te": 0, "ka": 0,
+        }
+        for ch in text:
+            cp = ord(ch)
+            if 0x0900 <= cp <= 0x097F:
+                counts["hi"] += 1
+            elif 0x0B80 <= cp <= 0x0BFF:
+                counts["ta"] += 1
+            elif 0x0C00 <= cp <= 0x0C7F:
+                counts["te"] += 1
+            elif 0x0C80 <= cp <= 0x0CFF:
+                counts["ka"] += 1
+
+        total = len(text)
+        for lang, cnt in counts.items():
+            if cnt > total * 0.25:
+                return lang
+        return "en"
+
+    def translate(
+        self,
+        text: str,
+        source_lang: str = "en",
+        target_lang: str = "hi",
+    ) -> str:
+        """
+        Translate *text* from *source_lang* to *target_lang*.
+
+        Returns the original text if no pack is installed or if
+        source == target.
+        """
+        if source_lang == target_lang or not text.strip():
+            return text
+        return translate_text(text, source_lang, target_lang)
+
+    def translate_batch(
+        self,
+        texts: list[str],
+        source_lang: str = "en",
+        target_lang: str = "hi",
+    ) -> list[str]:
+        return [self.translate(t, source_lang, target_lang) for t in texts]
 
 
-# Alias for compatibility
-TranslationEngine = SimpleTranslationEngine
+# ── Standalone helpers (used by app.py directly) ──────────────────────────────
+
+def get_available_languages() -> list[dict]:
+    """
+    Return installed language packs that can be translated *to* from English.
+    Each item: {"code": "es", "name": "Spanish"}
+    """
+    try:
+        from argostranslate import translate
+        installed = translate.get_installed_languages()
+        installed_codes = {lang.code for lang in installed}
+
+        result = []
+        if "en" not in installed_codes:
+            return result
+
+        en_obj = _get_lang_obj("en", installed)
+        if en_obj is None:
+            return result
+
+        for code, name in LANGUAGE_MAP.items():
+            if code == "en" or code not in installed_codes:
+                continue
+            tgt = _get_lang_obj(code, installed)
+            if tgt and en_obj.get_translation(tgt):
+                result.append({"code": code, "name": name})
+
+        return result
+    except ImportError:
+        return []
+    except Exception:
+        return []
 
 
-# Example usage
-if __name__ == "__main__":
-    translator = SimpleTranslationEngine()
-    
-    # Test translations
-    test_texts = [
-        "Machine Learning is powerful",
-        "Artificial Intelligence is transforming the world",
-        "The data system is important"
-    ]
-    
-    print("🌐 Translation Demo (Dictionary-Based)\n")
-    print("=" * 60)
-    
-    for text in test_texts:
-        hindi = translator.translate(text, 'en', 'hi')
-        tamil = translator.translate(text, 'en', 'ta')
-        
-        print(f"English: {text}")
-        print(f"Hindi:   {hindi}")
-        print(f"Tamil:   {tamil}")
-        print()
-    
-    # Show supported languages
-    print("=" * 60)
-    print("\n📚 Supported Languages:")
-    for code, name in translator.get_supported_languages().items():
-        print(f"  {code}: {name}")
-    
-    # Show dictionary stats
-    print("\n📖 Dictionary Statistics:")
-    stats = translator.get_dictionary_stats()
-    for lang, count in stats.items():
-        print(f"  {lang}: {count} words")
+def install_language_pair(from_code: str, to_code: str) -> tuple[bool, str]:
+    """Download and install an argostranslate pack."""
+    try:
+        from argostranslate import package
+
+        package.update_package_index()
+        available = package.get_available_packages()
+
+        target = next(
+            (p for p in available if p.from_code == from_code and p.to_code == to_code),
+            None,
+        )
+
+        if target is None:
+            return False, (
+                f"No Argos pack found for {from_code}→{to_code}. "
+                "See https://www.argosopentech.com/argospm/index/"
+            )
+
+        package.install_from_path(target.download())
+        return True, f"✅ Installed {from_code}→{to_code} language pack."
+
+    except ImportError:
+        return False, "argostranslate not installed. Run: pip install argostranslate"
+    except Exception as e:
+        return False, f"Installation failed: {e}"
+
+
+def translate_text(text: str, from_code: str, to_code: str) -> str:
+    """Translate paragraph-by-paragraph to keep memory low."""
+    if not text.strip() or from_code == to_code:
+        return text
+
+    try:
+        from argostranslate import translate
+
+        installed = translate.get_installed_languages()
+        src = _get_lang_obj(from_code, installed)
+        tgt = _get_lang_obj(to_code, installed)
+
+        if src is None:
+            return f"[Source language '{from_code}' not installed.]"
+        if tgt is None:
+            return f"[Target language '{to_code}' not installed. Install from sidebar.]"
+
+        tr_obj = src.get_translation(tgt)
+        if tr_obj is None:
+            return (
+                f"[No translation pack for {from_code}→{to_code}. "
+                "Install it from the sidebar.]"
+            )
+
+        paragraphs = text.split("\n\n")
+        return "\n\n".join(
+            tr_obj.translate(p) if p.strip() else p for p in paragraphs
+        )
+
+    except ImportError:
+        return "[argostranslate not installed. Run: pip install argostranslate]"
+    except Exception as e:
+        return f"[Translation error: {e}]"
+
+
+# ── Internal ──────────────────────────────────────────────────────────────────
+
+def _get_lang_obj(code: str, installed_langs):
+    return next((l for l in installed_langs if l.code == code), None)
