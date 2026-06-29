@@ -1,0 +1,84 @@
+# Advanced OCR System - Requirements
+# Python 3.8+
+
+# Core Framework
+streamlit
+streamlit-option-menu
+
+# OCR & Vision
+paddleocr
+paddlepaddle
+# paddlepaddle-gpu  # Optional: For GPU support; not available on this environment
+opencv-python
+opencv-contrib-python
+Pillow
+pytesseract  # Optional fallback
+
+# PDF & Document Processing
+PyMuPDF  # fitz
+python-docx
+PyPDF2
+
+# NLP & Text Processing
+spacy
+language-tool-python
+textblob
+
+# Language Detection & Translation
+# fasttext  # Optional: native build tool requirement on Windows/Python 3.13
+ctranslate2
+sentencepiece
+transformers
+
+# API & Networking
+requests
+aiohttp
+httpx
+
+# Data Processing
+numpy
+pandas
+scipy
+
+# Caching & Performance
+cachetools
+redis
+
+# Utilities
+python-dotenv
+pydantic
+loguru
+
+# Data Serialization
+pyyaml
+json5
+toml
+
+# Development & Testing
+pytest
+pytest-asyncio
+black
+flake8
+
+# Optional: GPU Support
+# torch
+# torchvision
+
+# Optional: Advanced NLP
+# transformers
+# torch
+# torchaudio
+
+# Optional: Cloud Storage
+# boto3                 # AWS S3
+# google-cloud-storage  # Google Cloud
+# azure-storage-blob    # Azure
+
+# Optional: Monitoring
+# sentry-sdk
+# prometheus-client
+
+# Optional: Database
+# psycopg2-binary
+# sqlalchemy
+# pymongo
