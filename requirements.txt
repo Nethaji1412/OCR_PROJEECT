@@ -37,4 +37,6 @@ toml
 
 transformers
 translation-engine
-ctranslate2==3.24.0
+streamlit
+ctranslate2
+sentencepiece
