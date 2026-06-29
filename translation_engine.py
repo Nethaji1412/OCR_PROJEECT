@@ -1,135 +1,111 @@
 """
-Translation Module using ctranslate2
-Fast and efficient translation with language detection
+Simple Translation Engine - Streamlit Cloud Compatible
+Works without ctranslate2 or heavy ML models
+Uses dictionary-based and heuristic translation
 """
 
-import ctranslate2
-import sentencepiece
 from typing import List, Dict, Optional
-import os
+import re
 
-class TranslationEngine:
+
+class SimpleTranslationEngine:
     """
-    Translation engine using ctranslate2
-    Supports fast neural machine translation
+    Simple translation engine using dictionary-based approach
+    Compatible with Streamlit Cloud (no heavy dependencies)
     """
     
     def __init__(self):
         """Initialize translation engine"""
-        print("Initializing Translation Engine...")
-        
-        # Model paths for different language pairs
-        self.models = {
-            'en2hi': 'nllb-200-distilled-600M',  # English to Hindi
-            'en2ta': 'nllb-200-distilled-600M',  # English to Tamil
-            'en2te': 'nllb-200-distilled-600M',  # English to Telugu
-            'en2ka': 'nllb-200-distilled-600M',  # English to Kannada
-            'en2mr': 'nllb-200-distilled-600M',  # English to Marathi
-        }
-        
         self.language_codes = {
-            'en': 'eng_Latn',
-            'hi': 'hin_Deva',
-            'ta': 'tam_Tamil',
-            'te': 'tel_Telu',
-            'ka': 'kan_Knda',
-            'mr': 'mar_Deva',
+            'en': 'English',
+            'hi': 'Hindi (हिंदी)',
+            'ta': 'Tamil (தமிழ்)',
+            'te': 'Telugu (తెలుగు)',
+            'ka': 'Kannada (ಕನ್ನಡ)',
+            'mr': 'Marathi (मराठी)',
         }
         
-        self.translators = {}
-        self._load_models()
-    
-    def _load_models(self):
-        """Load translation models"""
-        try:
-            # This is a simplified approach
-            # In production, download actual NLLB models
-            print("Note: Download NLLB-200 models from HuggingFace for production use")
-            print("Command: pip install -q https://github.com/OpenNMT/CTranslate2/releases/download/v3.14.0/ctranslate2-3.14.0-cp310-cp310-linux_x86_64.whl")
-        except Exception as e:
-            print(f"Warning: Could not load translation models: {e}")
-    
-    def _download_model(self, model_name: str, target_dir: str = "models"):
-        """Download model from HuggingFace"""
-        try:
-            from huggingface_hub import snapshot_download
-            
-            model_path = snapshot_download(
-                repo_id=f"facebook/{model_name}",
-                local_dir=os.path.join(target_dir, model_name)
-            )
-            return model_path
-        except Exception as e:
-            print(f"Error downloading model: {e}")
-            return None
+        # Comprehensive word dictionary for basic translation
+        self.translation_dict = {
+            'en': {
+                # Common words
+                'the': {'hi': 'यह', 'ta': 'அ', 'te': 'ఈ', 'ka': 'ಇದು', 'mr': 'हे'},
+                'a': {'hi': 'एक', 'ta': 'ஒரு', 'te': 'ఒక', 'ka': 'ಒಂದು', 'mr': 'एक'},
+                'is': {'hi': 'है', 'ta': 'உள்ளது', 'te': 'ఉంది', 'ka': 'ಆಗಿದೆ', 'mr': 'आहे'},
+                'and': {'hi': 'और', 'ta': 'மற்றும்', 'te': 'మరియు', 'ka': 'ಮತ್ತು', 'mr': 'आणि'},
+                'of': {'hi': 'का', 'ta': 'இன்', 'te': 'యొక్క', 'ka': 'ನ', 'mr': 'चा'},
+                'to': {'hi': 'को', 'ta': 'க்கு', 'te': 'కు', 'ka': 'ಗೆ', 'mr': 'ला'},
+                'in': {'hi': 'में', 'ta': 'இல்', 'te': 'లో', 'ka': 'ನಲ್ಲಿ', 'mr': 'मध्ये'},
+                'for': {'hi': 'के लिए', 'ta': 'க்கான', 'te': 'కోసం', 'ka': 'ಗಾಗಿ', 'mr': 'साठी'},
+                'that': {'hi': 'कि', 'ta': 'அது', 'te': 'అది', 'ka': 'ಅದು', 'mr': 'ते'},
+                'with': {'hi': 'के साथ', 'ta': 'உடன்', 'te': 'తో', 'ka': 'ಜೊತೆಗೆ', 'mr': 'सह'},
+                
+                # Tech/Business terms
+                'machine': {'hi': 'मशीन', 'ta': 'இயந்திரம்', 'te': 'యంత్రం', 'ka': 'ಯಂತ್ರ', 'mr': 'यंत्र'},
+                'learning': {'hi': 'सीखना', 'ta': 'கற்றல்', 'te': 'నేర్చుకోవడం', 'ka': 'ಕಲಿಕೆ', 'mr': 'शिक्षण'},
+                'data': {'hi': 'डेटा', 'ta': 'தரவு', 'te': 'డేటా', 'ka': 'ಡೇಟಾ', 'mr': 'डेटा'},
+                'system': {'hi': 'प्रणाली', 'ta': 'அமைப்பு', 'te': 'వ్యవస్థ', 'ka': 'ವ್ಯವಸ್ಥೆ', 'mr': 'प्रणाली'},
+                'computer': {'hi': 'कंप्यूटर', 'ta': 'கணினி', 'te': 'కంప్యూటర్', 'ka': 'ಕಂಪ್ಯೂಟರ್', 'mr': 'संगणक'},
+                'software': {'hi': 'सॉफ्टवेयर', 'ta': 'மென்பொருள்', 'te': 'సాఫ్ట్‌వేర్', 'ka': 'ಸಾಫ್ಟ್‌ವೇರ್', 'mr': 'सॉफ्टवेयर'},
+                'technology': {'hi': 'प्रौद्योगिकी', 'ta': 'தொழில்நுட்பம்', 'te': 'సాంకేతికత', 'ka': 'ತಂತ್ರಜ್ಞಾನ', 'mr': 'तंत्रज्ञान'},
+                'intelligence': {'hi': 'बुद्धिमत्ता', 'ta': 'அறிவுசாலி', 'te': 'గ్రహణశక్తి', 'ka': 'ಬುದ್ಧಿಮತ್ತೆ', 'mr': 'बुद्धिमत्ता'},
+                'artificial': {'hi': 'कृत्रिम', 'ta': 'செயற்கை', 'te': 'కృత్రిమ', 'ka': 'ಕೃತ್ರಿಮ', 'mr': 'कृत्रिम'},
+                'network': {'hi': 'नेटवर्क', 'ta': 'வலையமைப்பு', 'te': 'నెట్‌వర్క్', 'ka': 'ನೆಟ್‌ವರ್ಕ್', 'mr': 'नेटवर्क'},
+                'algorithm': {'hi': 'एल्गोरिदम', 'ta': 'வழிமுறை', 'te': 'అల్గారిథమ్', 'ka': 'ಅಲ್ಗಾರಿದಮ್', 'mr': 'अल्गोरिदम'},
+                
+                # Common adjectives
+                'good': {'hi': 'अच्छा', 'ta': 'நல்ல', 'te': 'మంచి', 'ka': 'ಒಳ್ಳೆಯ', 'mr': 'चांगला'},
+                'bad': {'hi': 'बुरा', 'ta': 'கெட்ட', 'te': 'చెడు', 'ka': 'ಕೆಟ್ಟ', 'mr': 'वाईट'},
+                'large': {'hi': 'बड़ा', 'ta': 'பெரிய', 'te': 'పెద్ద', 'ka': 'ದೊಡ್ಡ', 'mr': 'मोठा'},
+                'small': {'hi': 'छोटा', 'ta': 'சிறிய', 'te': 'చిన్న', 'ka': 'ಚಿಕ್ಕ', 'mr': 'लहान'},
+                'new': {'hi': 'नया', 'ta': 'புதிய', 'te': 'కొత్త', 'ka': 'ಹೊಸ', 'mr': 'नवीन'},
+                'old': {'hi': 'पुराना', 'ta': 'பழைய', 'te': 'పాతది', 'ka': 'ಹಳೆಯ', 'mr': 'जुना'},
+            }
+        }
     
     def translate(self, text: str, source_lang: str = 'en', target_lang: str = 'hi') -> str:
         """
-        Translate text from source to target language
+        Translate text using dictionary-based approach
         
         Args:
             text: Text to translate
-            source_lang: Source language code (e.g., 'en')
-            target_lang: Target language code (e.g., 'hi')
+            source_lang: Source language code
+            target_lang: Target language code
         
         Returns:
-            Translated text
+            Translated text or original if not possible
         """
-        try:
-            # For demonstration, using a simple approach
-            # In production, use actual ctranslate2 models
-            
-            if source_lang == target_lang:
-                return text
-            
-            # Get language codes for NLLB
-            src_code = self.language_codes.get(source_lang, 'eng_Latn')
-            tgt_code = self.language_codes.get(target_lang, 'hin_Deva')
-            
-            # This is where actual translation would happen
-            # For now, return placeholder
-            return self._translate_with_ctranslate2(text, src_code, tgt_code)
-        
-        except Exception as e:
-            print(f"Translation error: {e}")
-            return text  # Return original if translation fails
-    
-    def _translate_with_ctranslate2(self, text: str, source_code: str, target_code: str) -> str:
-        """
-        Perform actual translation using ctranslate2
-        
-        Requires:
-        1. Download NLLB model
-        2. Convert to ctranslate2 format
-        3. Load translator
-        """
-        try:
-            model_path = os.path.join("models", "nllb-200-distilled-600M")
-            
-            # Check if model exists
-            if not os.path.exists(model_path):
-                print(f"Model not found at {model_path}")
-                print("Download from: https://huggingface.co/facebook/nllb-200-distilled-600M")
-                return text
-            
-            # Initialize translator
-            translator = ctranslate2.Translator(model_path, device="cpu")
-            
-            # Prepare text with language tags (NLLB format)
-            text_with_tag = f"{target_code} {text}"
-            
-            # Translate
-            result = translator.translate_batch([[text_with_tag]])
-            
-            if result and result[0]:
-                translated = result[0][0]['tgt'][0].replace(target_code, "").strip()
-                return translated
-            
+        if source_lang == target_lang:
             return text
         
-        except Exception as e:
-            print(f"ctranslate2 error: {e}")
+        if source_lang not in self.translation_dict:
+            return text  # Can only translate from English
+        
+        # Split text into words
+        words = text.lower().split()
+        translated_words = []
+        untranslated_count = 0
+        
+        for word in words:
+            # Remove punctuation
+            clean_word = re.sub(r'[^\w\s]', '', word)
+            
+            # Try to translate
+            if clean_word in self.translation_dict[source_lang]:
+                translated = self.translation_dict[source_lang][clean_word].get(target_lang, word)
+                translated_words.append(translated)
+            else:
+                # Keep original word if not in dictionary
+                translated_words.append(word)
+                untranslated_count += 1
+        
+        result = ' '.join(translated_words)
+        
+        # If too many untranslated words, return original
+        if untranslated_count / len(words) > 0.7:
             return text
+        
+        return result
     
     def translate_batch(self, texts: List[str], source_lang: str = 'en', 
                        target_lang: str = 'hi') -> List[str]:
@@ -138,101 +114,88 @@ class TranslationEngine:
     
     def detect_language(self, text: str) -> str:
         """
-        Detect language of text
+        Detect language of text based on character patterns
         
         Returns:
-            Language code (e.g., 'en', 'hi')
+            Language code (en, hi, ta, te, ka, mr)
         """
-        try:
-            # Simple heuristic detection
-            if not text:
-                return 'en'
-            
-            # Count character patterns
-            hindi_chars = sum(1 for c in text if ord(c) >= 0x0900 and ord(c) <= 0x097F)
-            tamil_chars = sum(1 for c in text if ord(c) >= 0x0B80 and ord(c) <= 0x0BFF)
-            telugu_chars = sum(1 for c in text if ord(c) >= 0x0C00 and ord(c) <= 0x0C7F)
-            kannada_chars = sum(1 for c in text if ord(c) >= 0x0C80 and ord(c) <= 0x0CFF)
-            marathi_chars = sum(1 for c in text if ord(c) >= 0x0900 and ord(c) <= 0x097F)
-            
-            total_chars = len(text)
-            
-            # Determine language based on character density
-            if hindi_chars > total_chars * 0.3:
-                return 'hi'
-            elif tamil_chars > total_chars * 0.3:
-                return 'ta'
-            elif telugu_chars > total_chars * 0.3:
-                return 'te'
-            elif kannada_chars > total_chars * 0.3:
-                return 'ka'
-            else:
-                return 'en'  # Default to English
-        
-        except Exception as e:
-            print(f"Language detection error: {e}")
+        if not text:
             return 'en'
+        
+        # Count script-specific characters
+        hindi_chars = sum(1 for c in text if ord(c) >= 0x0900 and ord(c) <= 0x097F)
+        tamil_chars = sum(1 for c in text if ord(c) >= 0x0B80 and ord(c) <= 0x0BFF)
+        telugu_chars = sum(1 for c in text if ord(c) >= 0x0C00 and ord(c) <= 0x0C7F)
+        kannada_chars = sum(1 for c in text if ord(c) >= 0x0C80 and ord(c) <= 0x0CFF)
+        
+        total_chars = len(text)
+        
+        # Determine language based on character density
+        if hindi_chars > total_chars * 0.3:
+            return 'hi'
+        elif tamil_chars > total_chars * 0.3:
+            return 'ta'
+        elif telugu_chars > total_chars * 0.3:
+            return 'te'
+        elif kannada_chars > total_chars * 0.3:
+            return 'ka'
+        else:
+            return 'en'  # Default to English
     
     def get_supported_languages(self) -> Dict[str, str]:
         """Get all supported languages"""
-        return {
-            'en': 'English',
-            'hi': 'Hindi (हिंदी)',
-            'ta': 'Tamil (தமிழ்)',
-            'te': 'Telugu (తెలుగు)',
-            'ka': 'Kannada (ಕನ್ನಡ)',
-            'mr': 'Marathi (मराठी)',
-        }
+        return self.language_codes
+    
+    def add_translations(self, source_lang: str, word: str, translations: Dict[str, str]) -> None:
+        """Add custom word translations"""
+        if source_lang not in self.translation_dict:
+            self.translation_dict[source_lang] = {}
+        
+        self.translation_dict[source_lang][word.lower()] = translations
+    
+    def get_dictionary_stats(self) -> Dict:
+        """Get statistics about the translation dictionary"""
+        stats = {}
+        for lang, words in self.translation_dict.items():
+            stats[lang] = len(words)
+        return stats
 
 
-# Simplified fallback translator using dictionary
-class SimpleDictTranslator:
-    """
-    Fallback translator using simple dictionary approach
-    For demo/POC purposes
-    """
-    
-    def __init__(self):
-        """Initialize dictionary translator"""
-        self.common_words = {
-            'en': {
-                'the': {'hi': 'यह', 'ta': 'அ', 'te': 'ఈ'},
-                'a': {'hi': 'एक', 'ta': 'ஒரு', 'te': 'ఒక'},
-                'is': {'hi': 'है', 'ta': 'உள்ளது', 'te': 'ఉంది'},
-                'and': {'hi': 'और', 'ta': 'மற்றும்', 'te': 'మరియు'},
-            }
-        }
-    
-    def translate(self, text: str, source_lang: str = 'en', target_lang: str = 'hi') -> str:
-        """Simple word-by-word translation"""
-        if source_lang == target_lang:
-            return text
-        
-        words = text.lower().split()
-        translated_words = []
-        
-        for word in words:
-            clean_word = word.strip('.,!?;:')
-            
-            if clean_word in self.common_words.get(source_lang, {}):
-                translated = self.common_words[source_lang][clean_word].get(target_lang, word)
-                translated_words.append(translated)
-            else:
-                translated_words.append(word)
-        
-        return ' '.join(translated_words)
+# Alias for compatibility
+TranslationEngine = SimpleTranslationEngine
 
 
 # Example usage
 if __name__ == "__main__":
-    # Initialize translator
-    translator = TranslationEngine()
+    translator = SimpleTranslationEngine()
     
-    # Example translation
-    text = "Machine Learning is transforming the world"
+    # Test translations
+    test_texts = [
+        "Machine Learning is powerful",
+        "Artificial Intelligence is transforming the world",
+        "The data system is important"
+    ]
     
-    print("Original:", text)
-    print("To Hindi:", translator.translate(text, 'en', 'hi'))
-    print("To Tamil:", translator.translate(text, 'en', 'ta'))
-    print("Detected Language:", translator.detect_language(text))
-    print("Supported Languages:", translator.get_supported_languages())
+    print("🌐 Translation Demo (Dictionary-Based)\n")
+    print("=" * 60)
+    
+    for text in test_texts:
+        hindi = translator.translate(text, 'en', 'hi')
+        tamil = translator.translate(text, 'en', 'ta')
+        
+        print(f"English: {text}")
+        print(f"Hindi:   {hindi}")
+        print(f"Tamil:   {tamil}")
+        print()
+    
+    # Show supported languages
+    print("=" * 60)
+    print("\n📚 Supported Languages:")
+    for code, name in translator.get_supported_languages().items():
+        print(f"  {code}: {name}")
+    
+    # Show dictionary stats
+    print("\n📖 Dictionary Statistics:")
+    stats = translator.get_dictionary_stats()
+    for lang, count in stats.items():
+        print(f"  {lang}: {count} words")
